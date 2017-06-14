@@ -36,7 +36,7 @@ class TransportType(models.Model):
 
 
 class Site(models.Model):
-    Name = models.CharField(max_length=20)
+    Name = models.CharField(max_length=255)
 
     def __str__(self):
         return self.Name
@@ -57,7 +57,8 @@ class ApplicationType(models.Model):
 
 class DatabaseType(models.Model):
     Name = models.CharField(max_length=255)
-
+    created_at = models.DateTimeField(auto_now_add=True,null=True)
+    updated_at = models.DateTimeField(auto_now=True,null=True)
     def __str__(self):
         return self.Name
 
@@ -120,18 +121,28 @@ class BusinessCapability(models.Model):
             level += 1
             parent = parent.BusinessCapabilityParent
         return level
-
+    def getChildren(bcap):
+        nextchiles = BusinessCapability.objects.filter(BusinessCapabilityParent = bcap)
+        return nextchiles
     class Meta:
         ordering = ['Name']
         verbose_name_plural = "Business Capabilities"
         db_table = "businesscapability"
 
+    def display_Children(self):
+        firstchiles = BusinessCapability.objects.filter(BusinessCapabilityParent=self)
+        chilestring = ', '.join(
+            ["<a href='" + reverse("admin:silkollect_businesscapability_change", args=[i.id]) + "'>(" +
+             str(i.Level) + ') - ' +  i.Name + "</a>" for i in firstchiles.all()])
+        return chilestring
+    display_Children.short_description = 'Children Capabilities'
+    display_Children.allow_tags = True
 
 class ITCapability(models.Model):
     Name = models.CharField(max_length=255)
     ITCapabilityParent = models.ForeignKey('ITCapability', null=True, blank=True)
     Description = models.TextField(blank=True, null=True)
-
+    BusinessCapabilities = models.ManyToManyField('BusinessCapability', blank=True)
     def __str__(self):
         return self.Name
 
@@ -148,7 +159,8 @@ class ITCapability(models.Model):
         ordering = ['Name']
         verbose_name_plural = "IT Capabilities"
         db_table = 'itcapability'
-
+    def display_BusinessCapabilities(self):
+        return ', '.join([i.Name for i in self.BusinessCapabilities.all()])
 
 class Suite(models.Model):
     Value_Choices = (
@@ -429,8 +441,8 @@ class Contact(models.Model):
     Name = models.CharField(max_length=255)
     UID = models.CharField(max_length=255, blank=True, null=True)
     Email = models.CharField(max_length=255, blank=True, null=True)
-    PositionClass = models.ForeignKey('PositionClass', null=True)
-    PositionTitle = models.ForeignKey('PositionTitle', null=True)
+    PositionClass = models.ForeignKey('PositionClass', null=True, blank=True)
+    PositionTitle = models.ForeignKey('PositionTitle', null=True, blank=True)
 
     def __str__(self):
         return self.Name
@@ -645,14 +657,10 @@ class TechnicalOwnerContactAttachment(models.Model):
 class UserBase(models.Model):
     Name = models.CharField(max_length=255)
     Description = models.TextField(blank=True, null=True)
-
-
-def __str__(self):
-    return 'User Base: ' + str(self.Name)
-
-
-class Meta:
-    db_table = "userbase"
+    def __str__(self):
+        return 'User Base: ' + str(self.Name)
+    class Meta:
+        db_table = "userbase"
 
 
 class ApplicationCategory(models.Model):
@@ -685,20 +693,38 @@ class ITService(models.Model):
         return self.Name
 
     def display_ITCapabilities(self):
-        return ', '.join([i.Name for i in self.ITCapabilities.all()])
+        #return ', '.join([i.Name for i in self.ITCapabilities.all()])
+        return ', '.join(
+            ["<a href='" + reverse("admin:silkollect_itcapability_change", args=[i.id]) + "'>" + i.Name +
+             "</a>" for i in self.ITCapabilities.all()])
 
-    display_ITCapabilities.short_description = 'Provides IT Capabilities'
+    display_ITCapabilities.short_description = 'Provides IT Capabilities (top level)'
     display_ITCapabilities.allow_tags = True
 
     class Meta:
         db_table = "itservice"
 
 
+class DataClassification(models.Model):
+    Name = models.CharField(max_length=255)
+    Description = models.TextField(blank=True, null=True)
+    def __str__(self):
+        return self.Name
+
+class DataType(models.Model):
+    Name = models.CharField(max_length=255)
+    Description = models.TextField(blank=True, null=True)
+    DataClassification = models.ForeignKey('DataClassification', null=True, blank=True)
+    def __str__(self):
+        return self.Name + ', Classification: ' + str(self.DataClassification)
+
+#TODO: build out data classificatons for each application according to IT Security
 class Application(models.Model):
     Name = models.CharField(max_length=255)
-    ITServices = models.ManyToManyField('ITService', blank=True)
+    #ITServices = models.ManyToManyField('ITService', blank=True)
     ApplicationCategory = models.ForeignKey('ApplicationCategory', null=True, blank=True)
     InformationSource = models.ForeignKey('InformationSource', null=True, blank=True)
+    DataTypes = models.ManyToManyField('DataType', blank=True)
     # VeryLow = 'VL'
     # Low = 'L'
     # Medium = 'M'
@@ -711,20 +737,35 @@ class Application(models.Model):
         (4, 'High'),
         (5, 'Very High')
     )
+    Risk_Classification_Choices = (
+        (1, 'End of Life (System Retirements)'),
+        (2, 'Out of Compliance (Declining and Risky)'),
+        (3, 'Stable and Proven (Core to the Business)'),
+        (4, 'Available and Ready (Strategic Importance)'),
+        (5, 'Early Adoption (Emerging Opportunity)')
+    )
+    disposition_type_choices = (
+        (1, 'Currently Deployed'),
+        (2, 'Decommissioned'),
+        (3, 'Deployed, will decommission'),
+        (4, 'Not in Production - in planning')
+    )
     # business_value = models.CharField(max_length=2, choices=Value_Choices, blank=True, null=True)
     # technical_integrity = models.CharField(max_length=2, choices=Value_Choices, blank=True, null=True)
     business_value = models.IntegerField(choices=Value_Choices, null=True, blank=True)
     technical_integrity = models.IntegerField(choices=Value_Choices, null=True, blank=True)
-    DispositionType = models.ForeignKey('DispositionType', blank=True, null=True)
+    RiskClassification = models.IntegerField(choices=Risk_Classification_Choices, blank=True, null=True)
+    #DispositionType = models.ForeignKey('DispositionType', blank=True, null=True)
+    disposition_type = models.IntegerField(choices=disposition_type_choices, blank=True, null=True)
     Vendor = models.ForeignKey('Vendor', blank=True, null=True)
     # Cost = models.CharField(max_length=255, blank=True, null=True)
     InitialCost = models.DecimalField(blank=True, null=True, max_digits=10, decimal_places=2)
     Maintenance = models.DecimalField(blank=True, null=True, max_digits=10, decimal_places=2)
     CostNotes = models.TextField(blank=True, null=True)
     ApproximateNumberOfUsers = models.CharField(max_length=255, blank=True, null=True)
-    ApplicationRole = models.ForeignKey('ApplicationRole', blank=True, null=True)
+    ApplicationRoles = models.ManyToManyField('ApplicationRole', blank=True)
     RegulatoryType = models.ManyToManyField('RegulatoryType', blank=True)
-    Project = models.ForeignKey('Project', blank=True, null=True)
+    Projects = models.ManyToManyField('Project', blank=True)
     Description = models.TextField(blank=True, null=True)
     EnhancementNeeds = models.TextField(blank=True, null=True)
     Version = models.CharField(max_length=255, blank=True, null=True)
@@ -743,13 +784,16 @@ class Application(models.Model):
     Dependencies = models.ManyToManyField('Application', blank=True)
     BusinessUnit = models.ForeignKey('BusinessUnit', blank=True, null=True)
     CostCenter = models.ForeignKey('CostCenter', blank=True, null=True)
-
+    RecoveryPointObjective = models.ForeignKey('RecoveryObjective', blank=True, null=True,
+                                               related_name='RecoveryPointObjective')
+    RecoveryTimeObjective = models.ForeignKey('RecoveryObjective', blank=True, null=True,
+                                                related_name = 'RecoveryTimeObjective')
     # ToDoItems = models.ManyToManyField(ToDoItem, blank=True)
     def __str__(self):
         return self.Name
 
     def display_RiskEntries(self):
-        risks = RiskEntry.objects.filter(Applications=self)
+        risks = RiskEntry.objects.filter(Applications=self).filter(Satisfied=False)
         printstring = None
         for r in risks:
             urlstring = format_html("<a href='{url}'>" + r.Name + "</a>", url=reverse("admin:silkollect_riskentry_change", args=[r.id]))
@@ -759,7 +803,7 @@ class Application(models.Model):
                 printstring = printstring + ', ' + urlstring
         return printstring
     display_RiskEntries.short_description = 'Risk Entries'
-
+    display_RiskEntries.allow_tags = True
     # this functionality adds a many-to-many field on the admin form
     # https://www.jmccauli.com/django-list-display-and-manytomany-fields
     def display_TechnicalOwnerContacts(self):
@@ -768,11 +812,11 @@ class Application(models.Model):
     display_TechnicalOwnerContacts.short_description = 'TechnicalOwnerContacts'
     display_TechnicalOwnerContacts.allow_tags = True
 
-    def display_ITServices(self):
-        return ', '.join([i.Name for i in self.ITServices.all()])
+    #def display_ITServices(self):
+     #   return ', '.join([i.Name for i in self.ITServices.all()])
 
-    display_ITServices.short_description = 'Supports IT Services'
-    display_ITServices.allow_tags = True
+    #display_ITServices.short_description = 'Supports IT Services'
+    #display_ITServices.allow_tags = True
 
     def display_TechnicalIntegrity(self):
         return self.get_technical_integrity_display()
@@ -780,6 +824,51 @@ class Application(models.Model):
     def display_BusinessValue(self):
         return self.get_business_value_display()
     display_BusinessValue.short_description = 'Business Value'
+    def display_ToDoItems(self):
+        todos = ToDoItem.objects.filter(Application = self)
+        return ', '.join([i.Name for i in todos])
+    display_ToDoItems.short_description = 'TODO Items'
+    def display_ApplicationRoles(self):
+        return ', '.join(
+            ["<a href='" + reverse("admin:silkollect_applicationrole_change", args=[i.id]) + "'>" + i.Name +
+             "</a>" for i in self.ApplicationRoles.all()])
+    display_ApplicationRoles.short_description = 'Application Roles'
+    display_ApplicationRoles.allow_tags = True
+
+    def display_ITCapabilities(self):
+        for role in self.ApplicationRoles.all():
+            caps = role.ITCapabilities
+            return ', '.join(["<a href='" + reverse("admin:silkollect_itcapability_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in caps.all()])
+        else:
+            return ''
+    display_ITCapabilities.short_description = 'IT Capabilities'
+    display_ITCapabilities.allow_tags = True
+
+    def display_BusinessCapabilities(self):
+        caps = None
+        for role in self.ApplicationRoles.all():
+            for icap in role.ITCapabilities.all():
+                caps = icap.BusinessCapabilities
+        if caps is not None:
+            return ', '.join(["<a href='" + reverse("admin:silkollect_businesscapability_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in caps.all()])
+        else:
+            return ''
+
+    display_BusinessCapabilities.short_description = 'Business Capabilities'
+    display_BusinessCapabilities.allow_tags = True
+
+
+    def display_Dependencies(self):
+        return ', '.join(
+            ["<a href='" + reverse("admin:silkollect_application_change", args=[i.id]) + "'>" + i.Name +
+             "</a>" for i in self.Dependencies.all()])
+    display_Dependencies.short_description = 'Dependencies'
+    display_Dependencies.allow_tags = True
+    def display_Disposition(self):
+        return None if self.disposition_type is None else \
+            dict(Application.disposition_type_choices)[self.disposition_type]
 
     class Meta:
         db_table = "application"
@@ -869,12 +958,26 @@ class CostCenter(models.Model):
 
 class Vendor(models.Model):
     Name = models.CharField(max_length=255)
-
+    AccountingNumber = models.IntegerField(null=True, blank=True,)
     def __str__(self):
         return self.Name
 
     class Meta:
         db_table = "vendor"
+        ordering = ['Name']
+    def display_Applications(self):
+        apps = Application.objects.filter(Vendor=self)
+        returnstring = ''
+        numb = len(apps)
+        if numb > 1:
+            appstring = ', '.join([a.Name for a in apps.all()])
+            if len(appstring) > 50:
+                returnstring = '(' + str(numb) + ' apps): ' + appstring[:50] + '...'
+            else:
+                returnstring = '(' + str(numb) + ' apps): ' + appstring
+        else:
+            returnstring = ', '.join([a.Name for a in apps.all()])
+        return returnstring
 
 
 class ITGroup(models.Model):
@@ -887,6 +990,15 @@ class ITGroup(models.Model):
     class Meta:
         db_table = "itgroup"
 
+class ProjectTask(models.Model):
+    Name = models.CharField(max_length=255)
+    Project = models.ForeignKey('Project', null=True, blank=True)
+    Description = models.TextField(blank=True, null=True)
+    Finished = models.BooleanField(default=False)
+    StartDate = models.DateField(blank=True, null=True)
+    DueDate = models.DateField(blank=True, null=True)
+    def __str__(self):
+        return self.Name
 
 class Project(models.Model):
     Name = models.CharField(max_length=255)
@@ -903,14 +1015,22 @@ class Project(models.Model):
         return self.Name
 
     def display_projectapplications(self):
-        apps = Application.objects.filter(Project=self)
+        apps = Application.objects.filter(Projects=self)
         return ', '.join([a.Name for a in apps.all()])
 
     display_projectapplications.short_description = 'Applications for Project'
     display_projectapplications.allow_tags = True
 
+    def display_projecttasks(self):
+        tasks = ProjectTask.objects.filter(Project=self)
+        return ', '.join(["<a href='" + reverse("admin:silkollect_projecttask_change", args=[i.id]) + "'>" + i.Name +
+         "</a>" for i in tasks.all()])
+    display_projecttasks.short_description = 'Tasks for Project'
+    display_projecttasks.allow_tags = True
+
     class Meta:
         db_table = "project"
+        ordering = ('Name',)
 
 
 class ApplicationInterface(models.Model):
@@ -951,7 +1071,9 @@ class Server(models.Model):
     Network = models.ForeignKey('Network', blank=True, null=True)
     ServiceAccounts = models.ManyToManyField('ServiceAccount', blank=True)
     HardwareType = models.ForeignKey('HardwareType', blank=True, null=True)
-
+    Description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True,null=True)
+    updated_at = models.DateTimeField(auto_now=True,null=True)
     def __str__(self):
         retstr = self.ShortDescription
         if self.ComputerName != None and self.ComputerName != '':
@@ -988,7 +1110,8 @@ class ServerRole(models.Model):
     Shared = models.NullBooleanField()
     DatabaseType = models.ForeignKey(DatabaseType, blank=True, null=True)
     ApplicationEnvironment = models.ForeignKey('ApplicationEnvironment', blank=True, null=True)
-
+    created_at = models.DateTimeField(auto_now_add=True,null=True)
+    updated_at = models.DateTimeField(auto_now=True,null=True)
     def __str__(self):
         # retstr = 'Server: ' + str(self.Server) + ', Type: ' + str(self.ServerType)
         # if self.ApplicationEnvironment != None:
@@ -1005,7 +1128,15 @@ class ServerRole(models.Model):
 
     class Meta:
         db_table = "serverrole"
+        ordering = ['Server__ComputerName']
 
+    def display_AssignedApplications(self):
+        apps = Application.objects.filter(ServerRoles=self)
+        return ', '.join(
+            ["<a href='" + reverse("admin:silkollect_application_change", args=[i.id]) + "'>" + i.Name +
+             "</a>" for i in apps.all()])
+    display_AssignedApplications.short_description = 'Assigned Applications'
+    display_AssignedApplications.allow_tags = True
 
 class ServiceAccount(models.Model):
     Name = models.CharField(max_length=255)
@@ -1041,7 +1172,8 @@ class OperatingSystem(models.Model):
 
 class ApplicationEnvironment(models.Model):
     Name = models.CharField(max_length=255)
-
+    created_at = models.DateTimeField(auto_now_add=True,null=True)
+    updated_at = models.DateTimeField(auto_now=True,null=True)
     def __str__(self):
         return self.Name
 
@@ -1070,21 +1202,21 @@ class RegulatoryType(models.Model):
         db_table = "regulatorytype"
 
 
-class DispositionType(models.Model):
-    Name = models.CharField(max_length=255)
+#class DispositionType(models.Model):
+#    Name = models.CharField(max_length=255)
 
-    def __str__(self):
-        return self.Name
+    #def __str__(self):
+     #   return self.Name
 
-    class Meta:
-        ordering = ['Name']
-        db_table = "dispositiontype"
+    #class Meta:
+     #   ordering = ['Name']
+      #  db_table = "dispositiontype"
 
 
 class ApplicationRole(models.Model):
     Name = models.CharField(max_length=255)
-    BusinessCapabilities = models.ManyToManyField('BusinessCapability', blank=True)
-
+    #BusinessCapabilities = models.ManyToManyField('BusinessCapability', blank=True)
+    ITCapabilities = models.ManyToManyField('ITCapability', blank=True)
     def __str__(self):
         return self.Name
 
@@ -1092,15 +1224,30 @@ class ApplicationRole(models.Model):
         ordering = ['Name']
         db_table = "applicationrole"
 
-    def display_BusinessCapabilities(self):
-        return ', '.join([str(i) for i in self.BusinessCapabilities.all()])
+    def display_ITCapabilities(self):
+        return ', '.join(["<a href='" + reverse("admin:silkollect_itcapability_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in self.ITCapabilities.all()])
+    display_ITCapabilities.short_description = 'Assigned IT Capabilities'
+    display_ITCapabilities.allow_tags = True
 
+    def display_BusinessCapabilities(self):
+        bcaps = []
+        for icap in self.ITCapabilities.all():
+            for bcap in icap.BusinessCapabilities.all():
+                bcaps.append(bcap)
+        return ', '.join(["<a href='" + reverse("admin:silkollect_businesscapability_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in bcaps])
     display_BusinessCapabilities.short_description = 'Assigned Business Capabilities'
     display_BusinessCapabilities.allow_tags = True
 
+    def display_AssignedApplications(self):
+        apps = Application.objects.filter(ApplicationRoles=self)
+        return ', '.join(["<a href='" + reverse("admin:silkollect_application_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in apps.all()])
+    display_AssignedApplications.short_description = 'Assigned Applications'
+    display_AssignedApplications.allow_tags = True
 
 # Risk Register Items
-
 class RiskEntry(models.Model):
     Value_Choices = (
         (1, 'Very Low'),
@@ -1114,6 +1261,7 @@ class RiskEntry(models.Model):
     Name = models.CharField(max_length=255)
     Description = models.TextField(blank=True, null=True)
     Applications = models.ManyToManyField(Application, blank=True)
+    DatabaseType = models.ForeignKey(DatabaseType, blank=True, null=True)
     TechnologyClassifications = models.ManyToManyField('TechnologyClassification', blank=True)
     ArchitecturePillars = models.ManyToManyField('ArchitecturePillar', blank=True)
     ViolatedPrinciples = models.ManyToManyField('ArchitecturePrinciple', blank=True)
@@ -1131,14 +1279,85 @@ class RiskEntry(models.Model):
         db_table = "riskentry"
 
     def display_riskapplications(self):
-        return ', '.join([str(i) for i in self.Applications.all()])
+        apps = []
+        for app in self.Applications.all():
+            apps.append(app)
+        #walk through the implied ones now.
+        if self.DatabaseType is not None:
+            for app in Application.objects.all():
+                for srole in app.ServerRoles.all():
+                    if srole.DatabaseType == self.DatabaseType:
+                        #pass
+                        apps.append(app)
+        return ', '.join(["<a href='" + reverse("admin:silkollect_application_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in apps])
+    def display_riskdatabasetype(self):
+        return self.DatabaseType
+    display_riskdatabasetype.short_description = 'DatabaseType'
+
     def show_change_url(self):
         return "<a href='" + reverse("admin:silkollect_riskentry_change", args=[self.id]) + "'>" + self.Name + "</a>"
     display_riskapplications.short_description = 'Applications'
     display_riskapplications.allow_tags = True
 
+    def display_strategies(self):
+        #format_html("<a href='{url}'>" + r.Name + "</a>", url=reverse("admin:silkollect_riskentry_change", args=[r.id]))
+        return ', '.join(["<a href='" + reverse("admin:silkollect_itstrategy_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in self.ViolatedStrategies.all()])
+    display_strategies.short_description = 'Violated Strategies'
+    display_strategies.allow_tags = True
+    def display_principles(self):
+        return ', '.join(["<a href='" + reverse("admin:silkollect_architectureprinciple_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in self.ViolatedPrinciples.all()])
+    display_principles.short_description = 'Violated Principles'
+    display_principles.allow_tags = True
+    def display_pillars(self):
+        return ', '.join(["<a href='" + reverse("admin:silkollect_architecturepillar_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in self.ArchitecturePillars.all()])
+    display_pillars.short_description = 'Affected Architecture Pillars'
+    display_pillars.allow_tags = True
+
+    def display_Satisfied(self):
+        if self.Satisfied:
+            return 'Satisfied: ' + str(self.SatisfiedDate)
+        else:
+            return ''
+    display_Satisfied.short_description= 'Satisfied?'
+    def display_Dispensations(self):
+        disps = DispensationEntry.objects.filter(RiskEntry = self)
+        return ', '.join(["<a href='" + reverse("admin:silkollect_dispensationentry_change", args=[i.id]) + "'>" + i.Name +
+                   "</a>" for i in disps.all()])
+
+    display_Dispensations.short_description = 'Dispensations'
+    display_Dispensations.allow_tags = True
+
+    def display_DispensationDates(self):
+        disps = DispensationEntry.objects.filter(RiskEntry = self)
+        return ', '.join(["<a href='" + reverse("admin:silkollect_dispensationentry_change", args=[i.id]) + "'>" + str(i.DispensationDueDate) +
+                   "</a>" for i in disps.all()])
+
+    display_DispensationDates.short_description = 'Dispensation Date'
+    display_DispensationDates.allow_tags = True
+
+    def display_affectedbusinesscapabilities(self):
+        totalicaps = []
+        totalbcaps = []
+        for a in self.Applications.all():
+            for approle in a.ApplicationRoles.all():
+                if approle is not None:
+                    for itcap in approle.ITCapabilities.all():
+                        if itcap not in totalicaps:
+                            totalicaps.append(itcap)
+                        for bcap in itcap.BusinessCapabilities.all():
+                            if bcap not in totalbcaps:
+                                totalbcaps.append(bcap)
+        return ', '.join(["<a href='" + reverse("admin:silkollect_businesscapability_change", args=[i.id]) + "'>" + i.Name +
+                          "</a>" for i in totalbcaps])
+    display_affectedbusinesscapabilities.short_description = 'Affected Business Capabilities'
+    display_affectedbusinesscapabilities.allow_tags = True
 
 class DispensationEntry(models.Model):
+    Name = models.CharField(max_length=255,null=True, blank=True)
     Value_Choices = (
         (1, 'Open'),
         (2, 'Closed, No new Dispensation'),
@@ -1161,6 +1380,15 @@ class DispensationEntry(models.Model):
 
     display_riskapplications.short_description = 'Applications'
     display_riskapplications.allow_tags = True
+
+    def display_RiskEntry(self):
+        if self.RiskEntry is not None:
+            return "<a href='" + reverse("admin:silkollect_riskentry_change",
+                                         args=[self.RiskEntry.id]) + "'>" + self.RiskEntry.Name + "</a>"
+        else:
+            return None
+    display_RiskEntry.short_description = 'Risk Entry'
+    display_RiskEntry.allow_tags = True
 
 
 class TechnologyClassification(models.Model):
@@ -1244,3 +1472,10 @@ class ITStrategy(models.Model):
     class Meta:
         ordering = ['Name']
         db_table = "itstrategy"
+
+class RecoveryObjective(models.Model):
+    Name = models.CharField(max_length=255)
+    def __str__(self):
+        return self.Name
+    class Meta:
+        ordering = ['Name']

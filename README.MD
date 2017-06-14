@@ -41,9 +41,14 @@ So - this software does two things:
 * >create user 'silkuser'@'localhost' identified by 'silkpass';
 * >grant all privileges on *.* to 'silkuser'@'localhost';
 5. Modify the './silkcode/silk/settings/development.py' with database information.
-6. Run the server: 
+6. Create the superuser:
+* >$python manage.py createsuperuser --settings=silk.settings.development
+Build the schema:
+* >$python manage.py makemigrations --settings=silk.settings.development 
+* >$python manage.py migrate --settings=silk.settings.development 
+7. Run the server: 
 * > python manage.py runserver 0.0.0.0:8000 --settings=silk.settings.development
-7. Hit the address in your browser: http://localhost:8000/admin
+8. Hit the address in your browser: http://localhost:8000/admin
 
  
 ##Roadmap

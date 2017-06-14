@@ -4,7 +4,7 @@ from django.shortcuts import render,get_object_or_404
 from django.http import HttpResponse
 from django.http import Http404
 from django.template import loader
-from .models import Suite, Application, Site, DatabaseType, DispositionType, ApplicationRole, \
+from .models import Suite, Application, Site, DatabaseType, ApplicationRole, \
     ServerRole, Server, HardwareType, TechnicalOwnerContact, EndUserContact, BusinessOwnerContact, ServiceAccount, \
     RegulatoryType, AuthenticationType, Project, ApplicationType, Vendor, ProjectLead, RiskEntry
 import pdfkit
@@ -69,10 +69,10 @@ def applications(request):
             all_apps = Application.objects.filter(ApplicationType = None).order_by('Name')
         filtertitle = 'Application Type: ' + applicationtype
     elif dispositiontype:
-        id = DispositionType.objects.filter(Name = dispositiontype)
-        all_apps = Application.objects.filter(DispositionType = id)
+        id = dispositiontype
+        all_apps = Application.objects.filter(disposition_type = id)
         if dispositiontype == 'NONE':
-            all_apps = Application.objects.filter(DispositionType = None).order_by('Name')
+            all_apps = Application.objects.filter(disposition_type = None).order_by('Name')
         filtertitle = 'Application Disposition: ' + dispositiontype
     elif vendor:
         id = Vendor.objects.filter(Name = vendor)
@@ -471,6 +471,11 @@ def coreapplicationmapping(request):
     apptypecolors = {}
     colors = []
     ranwindow = 0.12
+    #riskclasscolors = ["#000000","#FF0000", "FF6600", "#FFFF00", "#66FF00", "#00FF00"]
+    #riskclasscolors = [0, 16711680, 16737792, 16776960, 6749952, 65280]
+    riskclasscolors = [1,100,1000,10000,100000,1000000]
+    apptypecolors[0] = riskclasscolors[0]
+    #'RdYlGn' is colormap to use
     for app in camapps:
         x = random.uniform(app.business_value - ranwindow, app.business_value + ranwindow)
         y = random.uniform(app.technical_integrity - ranwindow, app.technical_integrity + ranwindow)
@@ -478,10 +483,15 @@ def coreapplicationmapping(request):
         yaxis.append(y)
         label = app.Name
         labels.append(label)
+
         if app.ApplicationType not in apptypecolors:
             apptypecolors[app.ApplicationType] = random.randint(1,2)
         colors.append(apptypecolors[app.ApplicationType])
 
+        iterator = 0
+        #if app.RiskClassification is not None:
+#            iterator = app.RiskClassification #just an integer, but needs to not be null
+ #       colors.append(riskclasscolors[2])
 
     N = len(xaxis)
     #colors = numpy.random.rand(N)
@@ -489,7 +499,7 @@ def coreapplicationmapping(request):
     #print colors
     colormap = numpy.array(['r', 'g', 'b'])
     area = 40
-    scatter = ax.scatter(xaxis, yaxis, alpha = 0.4, s=area)#, c=colormap[colors] )
+    scatter = ax.scatter(xaxis, yaxis, alpha = 0.4, s=area, c=colormap[colors] )
     matplotlib.pyplot.ylabel('Technical Integrity')
     matplotlib.pyplot.xlabel('Business Value')
     ax.axis([0,6,0,6])

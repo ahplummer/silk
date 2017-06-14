@@ -4,11 +4,12 @@ import CSVExporter
 from django.contrib import admin
 from django.http import HttpResponse
 from nested_inline.admin import NestedStackedInline, NestedModelAdmin
+from django import forms
 
 from .models import Suite, Application, DatabaseType, AuthenticationType, ApplicationType, \
     Site, InterfaceDirection, InterfaceType, ApplicationInterface, BusinessOwnerContact, TechnicalOwnerContact, \
     Project, ServerType, Server, ServerRole, ServiceAccount, ServiceAccountType, OperatingSystem, \
-    ApplicationEnvironment, Network, ApplicationRole, DispositionType, RegulatoryType, HardwareType, \
+    ApplicationEnvironment, Network, ApplicationRole, RegulatoryType, HardwareType, \
     EndUserContact, Contact, ApplicationAttachment, GenericToDoItem, ToDoItem, Survey, SurveyAnswer, SurveyQuestion, \
     ProjectLead, ProjectManager, TechnicalOwnerContactAttachment, Vendor, UserBase, CostCenter, BusinessUnit, \
     ApplicationCategory, ApplicationRoadmap, SuiteRoadmap, Report, InformationSource, ITGroup, ArchitectureContact, \
@@ -16,7 +17,7 @@ from .models import Suite, Application, DatabaseType, AuthenticationType, Applic
     TechnologyClassification, ITStrategyAttachment, ArchitectureStandardAttachment, TransportType, \
     InterfaceAttachment, FunctionalArea, BusinessGoal, BusinessGoalAttachment, PositionClass, PositionTitle, \
     BusinessUnitAttachment, BusinessStrategy, BusinessObjective, BusinessTactic, BusinessCapability, ITCapability, \
-    ITService
+    ITService, RecoveryObjective, ProjectTask, DataClassification, DataType
 
 
 class ApplicationAttachmentsInline(admin.TabularInline):
@@ -77,6 +78,15 @@ def export_projects_csv(modeladmin, request, queryset):
 
 
 export_projects_csv.short_description = u"Export Projects to CSV"
+
+def export_riskregister_csv(modeladmin, request, queryset):
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename=silk_riskregister.csv'
+    writer = csv.writer(response, csv.excel)
+    response.write(u'\ufeff'.encode('utf8'))  # BOM (optional...Excel needs it to open UTF-8 file properly)
+    CSVExporter.CSVExportRiskEntries(queryset, writer)
+    return response
+export_riskregister_csv.short_description = u"Export Risk Register to CSV"
 
 
 def export_applications_camplot_csv(modeladmin, request, queryset):
@@ -208,44 +218,64 @@ class BusinessGoalAdmin(NestedModelAdmin):
         BusinessGoalAttachmentsInline,  # BusinessStrategyInline
     ]
 
+#class RolesForCapInline(admin.TabularInline):
+ #   model = ApplicationRole.ITCapabilities.through
+  #  extra = 0
+   # inlines = []
 
 class BusinessCapabilityAdmin(NestedModelAdmin):
-    list_display = ('Name', 'Level', 'BusinessCapabilityParent')
+    list_display = ('Name', 'Level', 'BusinessCapabilityParent', 'display_Children')
+    #inlines = [
+#        RolesForCapInline,
+ #   ]
 
+class ITServicesForITCapInline(admin.TabularInline):
+    model = ITService.ITCapabilities.through
+    extra = 0
+    inlines = []
 
 class ITCapabilityAdmin(NestedModelAdmin):
-    list_display = ('Name', 'Level', 'ITCapabilityParent')
-
+    list_display = ('Name', 'Level', 'ITCapabilityParent', 'display_BusinessCapabilities')
+    filter_horizontal = ('BusinessCapabilities',)
+    inlines = [
+        ITServicesForITCapInline
+    ]
 
 class ITServiceAdmin(NestedModelAdmin):
     list_display = ('Name', 'display_ITCapabilities')
 
+class ApplicationsForRoleInline(admin.TabularInline):
+    model = Application.ApplicationRoles.through
+    extra = 0
+    inlines = []
 
 class ApplicationRoleAdmin(NestedModelAdmin):
-    list_display = ('Name', 'display_BusinessCapabilities')
-    filter_horizontal = ('BusinessCapabilities',)
+    list_display = ('Name', 'display_ITCapabilities','display_BusinessCapabilities','display_AssignedApplications')
+    filter_horizontal = ('ITCapabilities',)
+    inlines = [ApplicationsForRoleInline,]
 
 
 class ApplicationAdmin(NestedModelAdmin):
-    list_display = ('Name', 'display_TechnicalIntegrity', 'display_BusinessValue', 'DispositionType', 'BusinessUnit',
-                    'display_ITServices', 'display_TechnicalOwnerContacts',
-                    'display_RiskEntries',)  # 'display_applicationtodo' )
+    list_display = ('Name', 'display_TechnicalIntegrity', 'display_BusinessValue',
+                    'display_Disposition','display_Dependencies','BusinessUnit',
+                    'display_TechnicalOwnerContacts',
+                    'display_RiskEntries','display_ToDoItems', 'display_ApplicationRoles',
+                    'display_ITCapabilities',
+                    'display_BusinessCapabilities')
     search_fields = ('Name',)
     ordering = ('Name',)
-    filter_horizontal = (
-        'ITServices', 'ServerRoles', 'EndUserContacts', 'TechnicalOwnerContacts', 'BusinessOwnerContacts',
-        'ProjectLeads',
+    filter_horizontal = ('DataTypes',
+        'ServerRoles', 'EndUserContacts', 'TechnicalOwnerContacts', 'BusinessOwnerContacts',
+        'ProjectLeads','ApplicationRoles',
         'UserBases', 'Dependencies')
     inlines = [
-        ApplicationAttachmentsInline, ToDoInline, ApplicationRoadmapsInline, ApplicationOutgoingInterfacesInline,
-        ApplicationIncomingInterfacesInline,
-        # , SurveyInline
+        ApplicationAttachmentsInline, ToDoInline, ApplicationRoadmapsInline
     ]
     actions = [export_applications_camplot_csv, ]
-    list_filter = (('DispositionType', admin.RelatedOnlyFieldListFilter),
+    list_filter = (#('DispositionType', admin.RelatedOnlyFieldListFilter),
                    ('BusinessUnit', admin.RelatedOnlyFieldListFilter),
                    'technical_integrity',
-                   'business_value',
+                   'business_value','DataTypes'
                    )
 
 
@@ -274,6 +304,9 @@ class SurveyAnswerAdmin(admin.ModelAdmin):
 
 class ServerAdmin(admin.ModelAdmin):
     filter_horizontal = ('ServiceAccounts',)
+    list_display = ('ShortDescription', 'ComputerName', 'Site')
+    list_filter = (('Site', admin.RelatedOnlyFieldListFilter),
+                   )
 
 
 class AppsInlineSuiteAdmin(admin.TabularInline):
@@ -282,6 +315,20 @@ class AppsInlineSuiteAdmin(admin.TabularInline):
     fields = ('Name',)
     can_delete = False
     readonly_fields = ('Name',)
+
+class ServerRoleAppsInline(NestedStackedInline):
+    model = Application.ServerRoles.through
+    extra = 0
+    inlines = []
+
+class ServerRoleAdmin(admin.ModelAdmin):
+    list_display = ('Name','ApplicationEnvironment', 'ServerType', 'DatabaseType','display_AssignedApplications')
+    inlines = [
+        ServerRoleAppsInline ,
+    ]
+    list_filter = (('ApplicationEnvironment', admin.RelatedOnlyFieldListFilter),
+                   )
+    search_fields = ('Server__ComputerName','Server__ShortDescription')
 
 
 class ReportAdmin(admin.ModelAdmin):
@@ -303,12 +350,33 @@ class ITGroupAdminInline(NestedStackedInline):
     fields = ('ITGroup',)
     extra = 0
 
+class ProjectTaskInline(NestedStackedInline):
+    model = ProjectTask
+    fields = ('Name',)
+    extra = 0
+    can_delete = False
+
+class ProjectTaskAdmin(admin.ModelAdmin):
+    list_display = ('Name', 'Project','Finished', 'StartDate', 'DueDate')
+
+class AppsForProjectInline(admin.TabularInline):
+    model = Application.Projects.through
+    extra = 0
+#    fields = ('Name',)
 
 class ProjectAdmin(admin.ModelAdmin):
     list_display = (
-        'Name', 'Finished', 'PMOSupported', 'Project_Manager', 'StartDate', 'DueDate', 'IT_Groups', 'Business_Units',
+        'Name', 'Finished', 'PMOSupported', 'Project_Manager',
+        'StartDate', 'DueDate', 'display_projecttasks',
+        'IT_Groups', 'Business_Units',
         'display_projectapplications')
     ordering = ('Finished', 'DueDate', 'Name',)
+    search_fields = ('Name', 'ProjectManager__Contact__Name')
+    inlines = [
+        ProjectTaskInline,AppsForProjectInline
+    ]
+
+    #filter_horizontal = ('ProjectTasks',)
 
     def Project_Manager(self, obj):
         return "\n".join([m.Name for m in obj.ProjectManager.all()])
@@ -394,7 +462,7 @@ class ToDoAdmin(admin.ModelAdmin):
 
 
 class ContactAdmin(admin.ModelAdmin):
-    list_display = ('Name', 'PositionTitle', 'PositionClass')
+    list_display = ('Name', 'UID', 'Email', 'PositionTitle', 'PositionClass')
     search_fields = ('Name',)
 
 
@@ -405,16 +473,44 @@ class DispensationInline(admin.TabularInline):
 
 
 class RiskAdmin(admin.ModelAdmin):
-    list_display = ('Name', 'display_riskapplications')
+    list_display = ('Name', 'display_Satisfied','display_Dispensations',
+                    'display_DispensationDates',
+                    'display_affectedbusinesscapabilities',
+                    'display_riskdatabasetype', 'display_riskapplications','display_strategies','display_principles',
+                    'display_pillars')
+    filter_horizontal = ['Applications', ]
     inlines = [
         DispensationInline,
     ]
-
+    actions = [export_riskregister_csv, ]
 
 class DispensationAdmin(admin.ModelAdmin):
-    list_display = ('RiskEntry', 'Finding', 'display_riskapplications', 'Disposition',
+    list_display = ('Name','display_RiskEntry', 'Finding', 'display_riskapplications', 'Disposition',
                     'DispensationDueDate')
 
+
+#class VendorApplicationForm(forms.ModelForm):
+    #def __init__(self, *args, **kwargs):
+#        super(VendorForm, self).__init__(*args, **kwargs)
+ #       #self.fields['Vendor'].queryset = Application.objects.all()
+ #   Vendor = forms.ModelChoiceField(queryset = Application.objects.filter(Vendor = self))
+  #  class Meta:
+   #     model = Application
+    #    exclude = ['name',]
+
+#class ApplicationNamesInline(admin.TabularInline):
+#    model = Application
+ #   list_display = ('Name',)
+    #filter_horizontal = ('Name',)
+    #extra = 0
+    #inlines = []
+
+class VendorAdmin(admin.ModelAdmin):
+    #form = VendorForm
+    list_display = ('Name', 'AccountingNumber','display_Applications')
+  #  inlines = [
+   #     ApplicationNamesInline,
+    #]
 
 # Register your models here.
 
@@ -451,14 +547,14 @@ admin.site.register(Contact, ContactAdmin)
 admin.site.register(EndUserContact)
 admin.site.register(HardwareType)
 admin.site.register(ApplicationRole, ApplicationRoleAdmin)
-admin.site.register(DispositionType)
+#admin.site.register(DispositionType)
 admin.site.register(RegulatoryType)
 admin.site.register(Network)
 admin.site.register(ApplicationEnvironment)
 admin.site.register(ServerType)
 admin.site.register(OperatingSystem)
 admin.site.register(Server, ServerAdmin)
-admin.site.register(ServerRole)
+admin.site.register(ServerRole, ServerRoleAdmin)
 admin.site.register(ServiceAccount)
 admin.site.register(ServiceAccountType)
 admin.site.register(Suite, SuiteAdmin)
@@ -466,7 +562,7 @@ admin.site.register(DatabaseType)
 admin.site.register(AuthenticationType)
 admin.site.register(ApplicationType)
 admin.site.register(Site)
-admin.site.register(Vendor)
+admin.site.register(Vendor, VendorAdmin)
 admin.site.register(Project, ProjectAdmin)
 admin.site.register(InterfaceDirection)
 admin.site.register(InterfaceType)
@@ -486,3 +582,7 @@ admin.site.register(BusinessTactic, BusinessTacticAdmin)
 admin.site.register(BusinessCapability, BusinessCapabilityAdmin)
 admin.site.register(ITCapability, ITCapabilityAdmin)
 admin.site.register(ITService, ITServiceAdmin)
+admin.site.register(RecoveryObjective)
+admin.site.register(ProjectTask, ProjectTaskAdmin)
+admin.site.register(DataType)
+admin.site.register(DataClassification)
