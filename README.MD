@@ -1,5 +1,7 @@
-#Silk (Software Inventory List Kollector)
-##Description
+# Silk (Software Inventory List Kollector)
+
+## Description
+
 This is my attempt to build a CRUD tool to operate a bit more effectively in the management of collecting software inventory.
 
 Furthermore, this tool will manage the evaluation of software based on:
@@ -25,7 +27,7 @@ So - this software does two things:
 1. Captures data.
 2. Exports selected data into CSV format.
 
-##Usage
+## Usage
 
 1. This is Django / Python.  If you're unsure what this is, you may want to turn around now.
 2. Generally, it's wise to stand up a VM, docker container, or minimally a virtualenv.
